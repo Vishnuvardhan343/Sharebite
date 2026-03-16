@@ -17,8 +17,7 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: [true, 'Password is required'],
-    minlength: [8, 'Password must be at least 8 characters'],
-    match: [/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/, 'Password must include uppercase, lowercase, number and special character'],
+    minlength: [6, 'Password must be at least 6 characters'],
     select: false,
   },
   role: {
@@ -50,7 +49,10 @@ const userSchema = new mongoose.Schema({
   notificationSettings: {
     emailNotifications: { type: Boolean, default: true },
     urgentPickupRequests: { type: Boolean, default: true }
-  }
+  },
+  emailVerified: { type: Boolean, default: false },
+  emailOtp: { type: String, select: false },
+  emailOtpExpires: { type: Date, select: false }
 }, { timestamps: true });
 
 userSchema.index({ location: '2dsphere' });

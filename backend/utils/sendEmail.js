@@ -96,6 +96,21 @@ const emailTemplates = {
       </div>
     `,
   }),
+
+  verificationOTP: (name, otp) => ({
+    subject: '🔐 Verify Your Email — Sharebite',
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f0fff4;padding:32px;border-radius:12px;">
+        <h2 style="color:#1B4332;">Welcome to Sharebite, ${name}! 🌱</h2>
+        <p>To complete your registration, please verify your email address using the following code:</p>
+        <div style="background:#fff;padding:15px;border-radius:8px;border:2px solid #52B788;text-align:center;font-size:24px;letter-spacing:8px;font-weight:bold;color:#1B4332;">
+          ${otp}
+        </div>
+        <p style="margin-top:20px;font-size:14px;color:#666;">This code is valid for 10 minutes. If you didn't create an account, please ignore this email.</p>
+        <p style="color:#52796F;font-size:12px;">Sharebite — Fighting Food Waste Together 🌍</p>
+      </div>
+    `,
+  }),
 };
 
 module.exports = { sendEmail, emailTemplates };

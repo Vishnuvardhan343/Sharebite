@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { sendEmail, emailTemplates } = require('../utils/sendEmail');
 
 const resetOtps = new Map(); // In-memory store for OTPs: email -> { otp, expiresAt }
+const pendingUsers = new Map(); // In-memory store for registration data: email -> { userData, otp, expiresAt }
 // Generate JWT
 const generateToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE || '7d' });
@@ -22,14 +23,75 @@ const register = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
-    const user = await User.create({ name, email, password: hashedPassword, role, phone, address, organisation });
+    
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = Date.now() + 10 * 60 * 1000; // 10 mins
 
-    // Send welcome email
+    // Store in pendingUsers instead of creating User
+    pendingUsers.set(email, {
+      userData: { name, email, password: hashedPassword, role, phone, address, organisation },
+      otp,
+      expiresAt: otpExpires
+    });
+
+    // Send verification email
+    const template = emailTemplates.verificationOTP(name, otp);
     await sendEmail({
       to: email,
-      subject: '🌱 Welcome to Sharebite!',
-      html: `<h2>Welcome, ${name}!</h2><p>Your ${role} account is active. Start making a difference today!</p>`,
+      subject: template.subject,
+      html: template.html,
     });
+
+    console.log(`[DEV] Registration OTP for ${email}: ${otp}`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Email verification code sent. Please check your email.',
+      email: email
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @route  POST /api/auth/verify-email-otp
+const verifyEmailOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    const pending = pendingUsers.get(email);
+
+    if (!pending) {
+      // Check if user already exists (might have refreshed or something)
+      const existingUser = await User.findOne({ email });
+      if (existingUser) return res.status(400).json({ message: 'Email already registered and verified.' });
+      return res.status(404).json({ message: 'No pending registration found for this email.' });
+    }
+
+    if (pending.otp !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    if (Date.now() > pending.expiresAt) {
+      pendingUsers.delete(email);
+      return res.status(400).json({ message: 'OTP has expired. Please register again.' });
+    }
+
+    // OTP is valid - Create the user now!
+    const { name, password, role, phone, address, organisation } = pending.userData;
+    const user = await User.create({ 
+      name, 
+      email, 
+      password, 
+      role, 
+      phone, 
+      address, 
+      organisation,
+      emailVerified: true 
+    });
+
+    // Clear pending data
+    pendingUsers.delete(email);
 
     res.status(201).json({
       success: true,
@@ -48,6 +110,41 @@ const register = async (req, res) => {
   }
 };
 
+// @route  POST /api/auth/resend-email-otp
+const resendEmailOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const pending = pendingUsers.get(email);
+
+    if (!pending) {
+      return res.status(404).json({ message: 'No pending registration found.' });
+    }
+
+    // Generate new OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    pending.otp = otp;
+    pending.expiresAt = Date.now() + 10 * 60 * 1000;
+    pendingUsers.set(email, pending);
+
+    // Send verification email
+    const template = emailTemplates.verificationOTP(pending.userData.name, otp);
+    await sendEmail({
+      to: email,
+      subject: template.subject,
+      html: template.html,
+    });
+
+    console.log(`[DEV] Resend OTP for ${email}: ${otp}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'New verification code sent to your email.'
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @route  POST /api/auth/login
 const login = async (req, res) => {
   try {
@@ -59,6 +156,9 @@ const login = async (req, res) => {
     }
     if (!user.isActive) {
       return res.status(403).json({ message: 'Account deactivated. Contact admin.' });
+    }
+    if (!user.emailVerified) {
+      return res.status(401).json({ message: 'Please verify your email address before logging in.' });
     }
 
     res.json({
@@ -244,4 +344,4 @@ const resetPasswordWithOtp = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, updateProfile, changePassword, upgradeToVolunteer, forgotPasswordSendOtp, verifyForgotPasswordOtp, resetPasswordWithOtp };
+module.exports = { register, login, getMe, updateProfile, changePassword, upgradeToVolunteer, forgotPasswordSendOtp, verifyForgotPasswordOtp, resetPasswordWithOtp, verifyEmailOTP, resendEmailOTP };
